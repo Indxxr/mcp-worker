@@ -75,18 +75,22 @@ function createServer(env: Env) {
           }
         });
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: true,
-                key,
-                content_type
-              })
-            }
-          ]
-        };
+       const public_url =
+  `https://pub-7e189893d4e1431eba4753bad97663ce.r2.dev/${key}`;
+
+return {
+  content: [
+    {
+      type: "text",
+      text: JSON.stringify({
+        ok: true,
+        key,
+        public_url,
+        content_type
+      })
+    }
+  ]
+};
       } catch (error) {
         return {
           content: [

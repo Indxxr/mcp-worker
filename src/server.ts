@@ -12,7 +12,7 @@ const INSTAGRAM_ID = "17841402148601055";
 function createServer(env: Env) {
   const server = new McpServer({
     name: "FLOPPY Story Control",
-    version: "1.0.0"
+    version: "1.1.0"
   });
 
   // ============================================================
@@ -20,7 +20,7 @@ function createServer(env: Env) {
 // ============================================================
 
 server.registerTool(
-  "upload_story_media",
+  "import_story_media",
   {
     description:
       "Download an image from a public HTTPS URL, store it in FLOPPY media storage, and return a public URL for Instagram Story publishing.",

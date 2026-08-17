@@ -16,98 +16,123 @@ function createServer(env: Env) {
   });
 
   // ============================================================
-  // TOOL 1: UPLOAD STORY ARTWORK TO R2
-  // ============================================================
+// TOOL 1: IMPORT STORY ARTWORK FROM PUBLIC HTTPS URL TO R2
+// ============================================================
 
-  server.registerTool(
-    "upload_story_media",
-    {
-      description:
-        "Upload an image supplied as base64 to FLOPPY media storage so it can be used for an Instagram Story.",
+server.registerTool(
+  "upload_story_media",
+  {
+    description:
+      "Download an image from a public HTTPS URL, store it in FLOPPY media storage, and return a public URL for Instagram Story publishing.",
 
-      inputSchema: {
-        image_base64: z
-          .string()
-          .describe("Base64 encoded image data"),
+    inputSchema: {
+      image_url: z
+        .string()
+        .url()
+        .describe("Public HTTPS URL of the image")
+    }
+  },
 
-        content_type: z
-          .enum(["image/jpeg", "image/png", "image/webp"])
-          .default("image/jpeg")
+  async ({ image_url }) => {
+    try {
+      if (!image_url.startsWith("https://")) {
+        throw new Error("Image URL must use HTTPS.");
       }
-    },
 
-    async ({ image_base64, content_type }) => {
-      try {
-        const cleanBase64 = image_base64.includes(",")
-          ? image_base64.split(",").pop()!
-          : image_base64;
+      // Download image
+      const response = await fetch(image_url);
 
-        const binary = atob(cleanBase64);
+      if (!response.ok) {
+        throw new Error(
+          `Image download failed: HTTP ${response.status}`
+        );
+      }
 
-        const bytes = new Uint8Array(binary.length);
+      const contentType =
+        response.headers.get("content-type") || "";
 
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
+      const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ];
+
+      const detectedType = contentType
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+
+      if (!allowedTypes.includes(detectedType)) {
+        throw new Error(
+          `Unsupported image type: ${detectedType || "unknown"}`
+        );
+      }
+
+      const data = await response.arrayBuffer();
+
+      if (!data.byteLength) {
+        throw new Error("Downloaded image is empty.");
+      }
+
+      // 15 MB safety limit
+      if (data.byteLength > 15 * 1024 * 1024) {
+        throw new Error("Image is too large.");
+      }
+
+      const ext =
+        detectedType === "image/png"
+          ? "png"
+          : detectedType === "image/webp"
+          ? "webp"
+          : "jpg";
+
+      const key =
+        "stories/" +
+        Date.now() +
+        "-" +
+        crypto.randomUUID() +
+        "." +
+        ext;
+
+      await env.FLOPPY_MEDIA.put(key, data, {
+        httpMetadata: {
+          contentType: detectedType
         }
+      });
 
-        if (!bytes.byteLength) {
-          throw new Error("Image is empty.");
-        }
+      const public_url =
+        `https://pub-7e189893d4e1431eba4753bad97663ce.r2.dev/${key}`;
 
-        const ext =
-          content_type === "image/png"
-            ? "png"
-            : content_type === "image/webp"
-            ? "webp"
-            : "jpg";
-
-        const key =
-          "stories/" +
-          Date.now() +
-          "-" +
-          crypto.randomUUID() +
-          "." +
-          ext;
-
-        await env.FLOPPY_MEDIA.put(key, bytes, {
-          httpMetadata: {
-            contentType: content_type
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              key,
+              public_url,
+              content_type: detectedType,
+              size: data.byteLength
+            })
           }
-        });
-
-       const public_url =
-  `https://pub-7e189893d4e1431eba4753bad97663ce.r2.dev/${key}`;
-
-return {
-  content: [
-    {
-      type: "text",
-      text: JSON.stringify({
-        ok: true,
-        key,
-        public_url,
-        content_type
-      })
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: String(error)
+            })
+          }
+        ],
+        isError: true
+      };
     }
-  ]
-};
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                error: String(error)
-              })
-            }
-          ],
-          isError: true
-        };
-      }
-    }
-  );
-
+  }
+);
   // ============================================================
   // TOOL 2: PUBLISH STORED IMAGE TO INSTAGRAM STORY
   // ============================================================
